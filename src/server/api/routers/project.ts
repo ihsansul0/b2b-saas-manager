@@ -1,31 +1,46 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
-import { projects } from "~/server/db/schema";
+import { projects, workspaces } from "~/server/db/schema";
+// 1. Import the Bouncer's internal radio (clerkClient)
+import { clerkClient } from "@clerk/nextjs/server";
 
 export const projectRouter = createTRPCRouter({
 
-    // 1. THE READ: Fetching all projects securely
     getAll: protectedProcedure.query(async ({ ctx }) => {
-        // We strictly query only the projects matching the active workspace clipboard ID
         return ctx.db.query.projects.findMany({
             where: (projects, { eq }) => eq(projects.workspaceId, ctx.workspaceId),
             orderBy: (projects, { desc }) => [desc(projects.createdAt)],
         });
     }),
 
-    // 2. THE WRITE: Creating a new project
     create: protectedProcedure
-        // THE STRICT FORM: Zod validates the incoming data before the mutation runs
         .input(z.object({
             name: z.string().min(3, "Project name must be at least 3 characters")
         }))
         .mutation(async ({ ctx, input }) => {
+
+            // THE FIX: JUST-IN-TIME (JIT) SYNC
+            // 1. Grab the Clerk Client to talk to the Bouncer's backend
+            const clerk = await clerkClient();
+
+            // 2. Ask the Bouncer for the details of the current kitchen
+            const organization = await clerk.organizations.getOrganization({
+                organizationId: ctx.workspaceId,
+            });
+
+            // 3. Tell Neon about the kitchen. 
+            // "onConflictDoNothing" is Drizzle magic: If the kitchen already exists, skip this safely!
+            await ctx.db.insert(workspaces).values({
+                id: ctx.workspaceId,
+                name: organization.name,
+            }).onConflictDoNothing();
+
+            // THE ORIGINAL PROJECT INSERT
             const newId = crypto.randomUUID();
 
             await ctx.db.insert(projects).values({
                 id: newId,
                 name: input.name,
-                // The Tenant ID Pattern in Action: We pull the workspaceId directly from the server context, NEVER from the user's frontend input.
                 workspaceId: ctx.workspaceId,
             });
 

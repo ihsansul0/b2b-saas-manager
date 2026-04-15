@@ -1,4 +1,4 @@
-import { createTRPCRouter } from "~/server/api/trpc";
+import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
 import { projectRouter } from "~/server/api/routers/project";
 
 /**
@@ -10,3 +10,9 @@ export const appRouter = createTRPCRouter({
 });
 
 export type AppRouter = typeof appRouter;
+
+/**
+ * The Kitchen Manager
+ * This allows Server Components to securely call tRPC procedures directly.
+ */
+export const createCaller = createCallerFactory(appRouter);
