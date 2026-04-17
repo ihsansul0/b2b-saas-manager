@@ -12,7 +12,7 @@ export default async function DashboardPage() {
     if (!orgId) {
         return (
             <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-8 text-slate-900">
-                <h1 className="mb-6 text-2xl font-bold tracking-tight">Welcome! Let's set up your first workspace.</h1>
+                <h1 className="mb-6 text-2xl font-bold tracking-tight">Welcome! Let&apos;s set up your first workspace.</h1>
                 <div className="rounded-xl border bg-white p-8 shadow-sm">
                     {/* Clerk's pre-built component handles all the complex workspace creation logic */}
                     <CreateOrganization />

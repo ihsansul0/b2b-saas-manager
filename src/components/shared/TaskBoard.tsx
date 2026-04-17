@@ -17,14 +17,14 @@ export function TaskBoard({ projectId }: { projectId: string }) {
     const createTask = api.task.create.useMutation({
         onSuccess: () => {
             setTitle(""); // Clear the input
-            utils.task.getByProjectId.invalidate({ projectId }); // Tell tRPC to instantly re-fetch the tasks!
+            void utils.task.getByProjectId.invalidate({ projectId }); // Tell tRPC to instantly re-fetch the tasks!
         },
     });
 
     // 3. The Status Update Mutation
     const updateStatus = api.task.updateStatus.useMutation({
         onSuccess: () => {
-            utils.task.getByProjectId.invalidate({ projectId }); // Instantly re-fetch tasks when status changes
+            void utils.task.getByProjectId.invalidate({ projectId }); // Instantly re-fetch tasks when status changes
         }
     });
 

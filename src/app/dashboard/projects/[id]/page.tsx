@@ -32,7 +32,7 @@ export default async function ProjectPage({
                 </div>
             </main>
         );
-    } catch (error) {
+    } catch {
         // If the project doesn't exist or doesn't belong to the user, throw a 404
         notFound();
     }

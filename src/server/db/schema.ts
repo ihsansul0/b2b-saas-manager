@@ -1,5 +1,4 @@
-import { pgTable, text, timestamp, varchar, pgEnum } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, timestamp, varchar, pgEnum } from "drizzle-orm/pg-core";
 
 // 1. ENUMS (Strict predefined values)
 export const taskStatusEnum = pgEnum("task_status", ["TODO", "IN_PROGRESS", "DONE"]);
