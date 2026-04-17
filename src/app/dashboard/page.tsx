@@ -15,7 +15,7 @@ export default async function DashboardPage() {
                 <h1 className="mb-6 text-2xl font-bold tracking-tight">Welcome! Let's set up your first workspace.</h1>
                 <div className="rounded-xl border bg-white p-8 shadow-sm">
                     {/* Clerk's pre-built component handles all the complex workspace creation logic */}
-                    <CreateOrganization hidePersonal={true} />
+                    <CreateOrganization />
                 </div>
             </main>
         );
