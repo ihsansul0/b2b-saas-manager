@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { api } from "~/trpc/server";
 import { CreateProjectForm } from "~/components/shared/CreateProjectForm";
 import { UserButton, OrganizationSwitcher, CreateOrganization } from "@clerk/nextjs";
@@ -48,14 +49,13 @@ export default async function DashboardPage() {
                     ) : (
                         <ul className="grid gap-4">
                             {projects.map((project) => (
-                                <li
-                                    key={project.id}
-                                    className="flex items-center justify-between rounded-lg border p-4 shadow-sm"
-                                >
-                                    <span className="font-medium">{project.name}</span>
-                                    <span className="text-xs text-slate-500">
-                                        Created {project.createdAt.toLocaleDateString()}
-                                    </span>
+                                <li key={project.id} className="group rounded-lg border bg-white shadow-sm transition-all hover:border-slate-400 hover:shadow-md">
+                                    <Link href={`/dashboard/projects/${project.id}`} className="flex items-center justify-between p-4">
+                                        <span className="font-medium group-hover:text-blue-600 transition-colors">{project.name}</span>
+                                        <span className="text-xs text-slate-500">
+                                            Created {project.createdAt.toLocaleDateString()}
+                                        </span>
+                                    </Link>
                                 </li>
                             ))}
                         </ul>

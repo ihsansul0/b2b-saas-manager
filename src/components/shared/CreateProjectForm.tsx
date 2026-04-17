@@ -40,8 +40,9 @@ export function CreateProjectForm() {
             </Button>
 
             {/* If Zod or the backend throws an error, show it here */}
+            {/* Look for the specific Zod field error first! */}
             {createProject.error && (
-                <p className="text-sm text-red-500">{createProject.error.message}</p>
+                <p className="text-sm text-red-500">{createProject.error.data?.zodError?.fieldErrors?.name?.[0] ?? createProject.error.message}</p>
             )}
         </form>
     );

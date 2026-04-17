@@ -13,6 +13,25 @@ export const projectRouter = createTRPCRouter({
         });
     }),
 
+    // FETCH A SINGLE PROJECT SECURELY
+    getById: protectedProcedure
+        .input(z.object({ id: z.string() }))
+        .query(async ({ ctx, input }) => {
+            const project = await ctx.db.query.projects.findFirst({
+                where: (projects, { eq, and }) => and(
+                    eq(projects.id, input.id),
+                    eq(projects.workspaceId, ctx.workspaceId) // Security Anchor!
+                ),
+            });
+
+            // If the project doesn't exist (or the hacker doesn't own it), throw an error
+            if (!project) {
+                throw new Error("Project not found");
+            }
+
+            return project;
+        }),
+
     create: protectedProcedure
         .input(z.object({
             name: z.string().min(3, "Project name must be at least 3 characters")
