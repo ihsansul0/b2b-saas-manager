@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { TaskBoard } from "~/components/shared/TaskBoard";
 import Link from "next/link";
 import { Button } from "~/components/ui/button";
+import { DeleteProjectButton } from "~/components/shared/DeleteProjectButton";
+import { ProjectHeader } from "~/components/shared/ProjectHeader";
 
 export default async function ProjectPage({
     params
@@ -25,7 +27,11 @@ export default async function ProjectPage({
                         </Button>
                     </Link>
 
-                    <h1 className="mb-8 text-3xl font-extrabold tracking-tight">{project.name}</h1>
+                    {/* Flexbox to push the title left and the delete button right */}
+                    <div className="mb-8 flex items-center justify-between">
+                        <ProjectHeader projectId={project.id} initialName={project.name} />
+                        <DeleteProjectButton projectId={project.id} />
+                    </div>
 
                     {/* We pass the verified ID into our Client Component */}
                     <TaskBoard projectId={project.id} />

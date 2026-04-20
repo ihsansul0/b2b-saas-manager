@@ -39,7 +39,7 @@ export const taskRouter = createTRPCRouter({
             return { id: newId };
         }),
 
-    // 3. THE UPDATE: Move a task across the Kanban board
+    // 3. THE STATUS UPDATE: Move a task across the Kanban board
     updateStatus: protectedProcedure
         .input(z.object({
             taskId: z.string(),
@@ -56,5 +56,39 @@ export const taskRouter = createTRPCRouter({
                         eq(tasks.workspaceId, ctx.workspaceId)
                     )
                 );
+        }),
+
+    // THE UPDATE PROTOCOL (Rename Task)
+    update: protectedProcedure
+        .input(z.object({
+            taskId: z.string(),
+            title: z.string().min(3, "Task title must be at least 3 characters")
+        }))
+        .mutation(async ({ ctx, input }) => {
+            await ctx.db.update(tasks)
+                .set({ title: input.title })
+                .where(
+                    and(
+                        eq(tasks.id, input.taskId),
+                        eq(tasks.workspaceId, ctx.workspaceId) // Security Anchor
+                    )
+                );
+
+            return { success: true };
+        }),
+
+    // THE DEMOLITION PROTOCOL (Delete Task)
+    delete: protectedProcedure
+        .input(z.object({ taskId: z.string() }))
+        .mutation(async ({ ctx, input }) => {
+            await ctx.db.delete(tasks)
+                .where(
+                    and(
+                        eq(tasks.id, input.taskId),
+                        eq(tasks.workspaceId, ctx.workspaceId) // Security Anchor
+                    )
+                );
+
+            return { success: true };
         }),
 });
