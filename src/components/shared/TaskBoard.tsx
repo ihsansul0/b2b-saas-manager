@@ -105,7 +105,7 @@ export function TaskBoard({ projectId }: { projectId: string }) {
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
                     {COLUMNS.map((colStatus) => {
                         // Bucket the tasks into their specific columns
-                        const columnTasks = tasks?.filter((t) => t.status === colStatus) || [];
+                        const columnTasks = tasks?.filter((t) => t.status === colStatus) ?? [];
 
                         return (
                             <Droppable key={colStatus} droppableId={colStatus}>
