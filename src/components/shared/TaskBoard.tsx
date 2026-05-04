@@ -1,15 +1,50 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "~/trpc/react";
 import { Button } from "~/components/ui/button";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
+import { TaskDetailPanel } from "~/components/shared/TaskDetailPanel";
+import Pusher from "pusher-js";
+import { useUser, useAuth } from "@clerk/nextjs";
+import { tasks } from "~/server/db/schema";
+import type { InferSelectModel } from "drizzle-orm";
 
 const COLUMNS = ["TODO", "IN_PROGRESS", "DONE"] as const;
+type Task = InferSelectModel<typeof tasks>;
 
 export function TaskBoard({ projectId }: { projectId: string }) {
     const [title, setTitle] = useState("");
+    const [selectedTask, setSelectedTask] = useState<Task | null>(null);
     const utils = api.useUtils();
+
+    // We need our ID (to prevent echoes) and our Organization ID (to tune the radio)
+    const { user } = useUser();
+    const { orgId } = useAuth();
+
+    // THE LIVE WIRE (Board Listener)
+    useEffect(() => {
+        // If we aren't in a workspace yet, don't try to connect
+        if (!orgId) return;
+
+        const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
+            cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+        });
+
+        // Tune into the Workspace-wide frequency
+        const channel = pusher.subscribe(`workspace-${orgId}`);
+
+        channel.bind("board-updated", (data: { triggeredBy: string }) => {
+            // If SOMEONE ELSE moved a card, instantly refresh our board!
+            if (data.triggeredBy !== user?.id) {
+                void utils.task.getByProjectId.invalidate();
+            }
+        });
+
+        return () => {
+            pusher.unsubscribe(`workspace-${orgId}`);
+        };
+    }, [orgId, user?.id, utils]);
 
     // 1. Fetch Tasks
     const { data: tasks, isLoading } = api.task.getByProjectId.useQuery({ projectId });
@@ -27,6 +62,8 @@ export function TaskBoard({ projectId }: { projectId: string }) {
                     status: "TODO" as const,
                     projectId: newParam.projectId,
                     workspaceId: "optimistic",
+                    description: null,
+                    dueDate: null,
                     createdAt: new Date(),
                     updatedAt: new Date(),
                 };
@@ -38,7 +75,10 @@ export function TaskBoard({ projectId }: { projectId: string }) {
             if (ctx?.prev) utils.task.getByProjectId.setData({ projectId }, ctx.prev);
             setTitle(newParam.title);
         },
-        onSettled: () => void utils.task.getByProjectId.invalidate({ projectId }),
+        onSettled: () => {
+            void utils.task.getByProjectId.invalidate({ projectId });
+            void utils.task.getProjectStats.invalidate({ projectId });
+        },
     });
 
     // 3. Optimistic Status Update (The Magic behind the Drag & Drop)
@@ -55,12 +95,18 @@ export function TaskBoard({ projectId }: { projectId: string }) {
         onError: (err, newUpdate, ctx) => {
             if (ctx?.prev) utils.task.getByProjectId.setData({ projectId }, ctx.prev);
         },
-        onSettled: () => void utils.task.getByProjectId.invalidate({ projectId }),
+        onSettled: () => {
+            void utils.task.getByProjectId.invalidate({ projectId });
+            void utils.task.getProjectStats.invalidate({ projectId });
+        }
     });
 
     // 4. The Delete Protocol
     const deleteTask = api.task.delete.useMutation({
-        onSuccess: () => void utils.task.getByProjectId.invalidate({ projectId })
+        onSuccess: () => {
+            void utils.task.getByProjectId.invalidate({ projectId });
+            void utils.task.getProjectStats.invalidate({ projectId });
+        }
     });
 
     // THE DRAG & DROP ENGINE
@@ -128,6 +174,7 @@ export function TaskBoard({ projectId }: { projectId: string }) {
                                                             ref={provided.innerRef}
                                                             {...provided.draggableProps}
                                                             {...provided.dragHandleProps}
+                                                            onClick={() => setSelectedTask(task)}
                                                             className={`group relative flex flex-col justify-between rounded-lg border bg-white p-4 shadow-sm transition-shadow ${snapshot.isDragging ? "shadow-xl ring-2 ring-blue-500" : "hover:border-slate-300"
                                                                 }`}
                                                         >
@@ -137,7 +184,12 @@ export function TaskBoard({ projectId }: { projectId: string }) {
 
                                                             {/* Hover Delete Button */}
                                                             <button
-                                                                onClick={() => deleteTask.mutate({ taskId: task.id })}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (window.confirm("Delete this task forever?")) {
+                                                                        deleteTask.mutate({ taskId: task.id })
+                                                                    }
+                                                                }}
                                                                 className="absolute right-2 top-2 hidden text-slate-400 hover:text-red-500 group-hover:block"
                                                                 title="Delete task"
                                                             >
@@ -156,6 +208,14 @@ export function TaskBoard({ projectId }: { projectId: string }) {
                     })}
                 </div>
             </DragDropContext>
+
+            {/* Render the Slide-Out Panel if a task is selected */}
+            {selectedTask && (
+                <TaskDetailPanel
+                    task={selectedTask}
+                    onClose={() => setSelectedTask(null)}
+                />
+            )}
         </div>
     );
 }

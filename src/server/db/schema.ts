@@ -1,4 +1,4 @@
-import { pgTable, timestamp, varchar, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, timestamp, varchar, pgEnum, text } from "drizzle-orm/pg-core";
 
 // 1. ENUMS (Strict predefined values)
 export const taskStatusEnum = pgEnum("task_status", ["TODO", "IN_PROGRESS", "DONE"]);
@@ -41,6 +41,37 @@ export const tasks = pgTable("tasks", {
     .references(() => projects.id),
 
   // The Tenant ID Pattern (Crucial for B2B Security)
+  workspaceId: varchar("workspace_id", { length: 255 })
+    .notNull()
+    .references(() => workspaces.id),
+
+  description: text("description"),
+  dueDate: timestamp("due_date", { mode: 'date' }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// THE COLLABORATION HUB (Comments)
+export const comments = pgTable("comments", {
+  id: varchar("id", { length: 255 })
+    .notNull()
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+
+  content: text("content").notNull(), // text() for long messages
+
+  // Relational Links
+  taskId: varchar("task_id", { length: 255 })
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }), // If task dies, comments die!
+
+  // Who wrote it? (Tying it to Clerk Auth)
+  userId: varchar("user_id", { length: 255 })
+    .notNull()
+    .references(() => users.id),
+
+  // The B2B Security Anchor
   workspaceId: varchar("workspace_id", { length: 255 })
     .notNull()
     .references(() => workspaces.id),

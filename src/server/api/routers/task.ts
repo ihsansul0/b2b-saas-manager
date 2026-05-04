@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql, asc } from "drizzle-orm";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
-import { tasks } from "~/server/db/schema";
+import { tasks, comments, users } from "~/server/db/schema";
+import { currentUser } from "@clerk/nextjs/server";
+import { pusherServer } from "~/server/pusher";
 
 export const taskRouter = createTRPCRouter({
 
@@ -20,6 +22,38 @@ export const taskRouter = createTRPCRouter({
             });
         }),
 
+    // THE ANALYTICS ENGINE (SQL Aggregations)
+    getProjectStats: protectedProcedure
+        .input(z.object({ projectId: z.string() }))
+        .query(async ({ ctx, input }) => {
+            // We ask the database to count the rows, rather than fetching all the data
+            const stats = await ctx.db
+                .select({
+                    totalTasks: sql<number>`count(${tasks.id})::int`,
+                    completedTasks: sql<number>`count(${tasks.id}) filter (where ${tasks.status} = 'DONE')::int`,
+                })
+                .from(tasks)
+                .where(
+                    and(
+                        eq(tasks.projectId, input.projectId),
+                        eq(tasks.workspaceId, ctx.workspaceId) // Security Anchor
+                    )
+                );
+
+            // Drizzle returns an array, but we only expect one row of math
+            const result = stats[0] ?? { totalTasks: 0, completedTasks: 0 };
+
+            // Calculate the percentage safely (avoiding dividing by zero)
+            const progressPercentage = result.totalTasks > 0
+                ? Math.round((result.completedTasks / result.totalTasks) * 100)
+                : 0;
+
+            return {
+                ...result,
+                progressPercentage,
+            };
+        }),
+
     // 2. THE WRITE: Create a new task
     create: protectedProcedure
         .input(z.object({
@@ -27,13 +61,23 @@ export const taskRouter = createTRPCRouter({
             projectId: z.string()
         }))
         .mutation(async ({ ctx, input }) => {
+            // 1. Grab the user for the live broadcast
+            const clerkUser = await currentUser();
+            if (!clerkUser) throw new Error("Unauthorized");
+
             const newId = crypto.randomUUID();
 
+            // 2. Insert into the database
             await ctx.db.insert(tasks).values({
                 id: newId,
                 title: input.title,
                 projectId: input.projectId,
                 workspaceId: ctx.workspaceId, // Security Anchor
+            });
+
+            // 3. The Live Wire Broadcast
+            await pusherServer.trigger(`workspace-${ctx.workspaceId}`, "board-updated", {
+                triggeredBy: clerkUser.id,
             });
 
             return { id: newId };
@@ -46,8 +90,15 @@ export const taskRouter = createTRPCRouter({
             status: z.enum(["TODO", "IN_PROGRESS", "DONE"]),
         }))
         .mutation(async ({ ctx, input }) => {
+            // 1. Grab the user so we know who is moving the card (to prevent echoes)
+            const clerkUser = await currentUser();
+            if (!clerkUser) throw new Error("Unauthorized");
+
             await ctx.db.update(tasks)
-                .set({ status: input.status })
+                .set({
+                    status: input.status,
+                    updatedAt: new Date() // Keep our timestamps accurate
+                })
                 .where(
                     and(
                         // Find the exact task
@@ -56,6 +107,114 @@ export const taskRouter = createTRPCRouter({
                         eq(tasks.workspaceId, ctx.workspaceId)
                     )
                 );
+
+            // THE LIVE WIRE: BROADCAST THE BOARD UPDATE
+            // We broadcast to the entire workspace!
+            await pusherServer.trigger(`workspace-${ctx.workspaceId}`, "board-updated", {
+                triggeredBy: clerkUser.id,
+            });
+
+            return { success: true };
+        }),
+
+    // THE DEEP DIVE (Update Details)
+    updateDetails: protectedProcedure
+        .input(z.object({
+            taskId: z.string(),
+            title: z.string().min(3, "Task title must be at least 3 characters"),
+            description: z.string().nullable().optional(),
+            dueDate: z.date().nullable().optional(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+            // 1. Grab the user for the live broadcast
+            const clerkUser = await currentUser();
+            if (!clerkUser) throw new Error("Unauthorized");
+
+            // 2. Update the database
+            await ctx.db.update(tasks)
+                .set({
+                    title: input.title,
+                    description: input.description,
+                    dueDate: input.dueDate,
+                    updatedAt: new Date()
+                })
+                .where(
+                    and(
+                        eq(tasks.id, input.taskId),
+                        eq(tasks.workspaceId, ctx.workspaceId) // Security Anchor
+                    )
+                );
+
+            // 3. The Live Wire Broadcast
+            await pusherServer.trigger(`workspace-${ctx.workspaceId}`, "board-updated", {
+                triggeredBy: clerkUser.id,
+            });
+
+            return { success: true };
+        }),
+
+    // THE COLLABORATION HUB (Event Stream)
+    // 1. Fetch comments and stitch them together with User data
+    getComments: protectedProcedure
+        .input(z.object({ taskId: z.string() }))
+        .query(async ({ ctx, input }) => {
+            return await ctx.db
+                .select({
+                    id: comments.id,
+                    content: comments.content,
+                    createdAt: comments.createdAt,
+                    user: {
+                        name: users.name,
+                        email: users.email,
+                    }
+                })
+                .from(comments)
+                .innerJoin(users, eq(comments.userId, users.id)) // <-- THE SQL JOIN MAGIC
+                .where(
+                    and(
+                        eq(comments.taskId, input.taskId),
+                        eq(comments.workspaceId, ctx.workspaceId) // Security Anchor
+                    )
+                )
+                .orderBy(asc(comments.createdAt)); // Oldest at the top, newest at the bottom (like iMessage)
+        }),
+
+    // 2. Add a new comment
+    addComment: protectedProcedure
+        .input(z.object({
+            taskId: z.string(),
+            content: z.string().min(1)
+        }))
+        .mutation(async ({ ctx, input }) => {
+            // --- THE JIT SYNC ---
+            // 1. Fetch the user's real name and email from Clerk's servers
+            const clerkUser = await currentUser();
+            if (!clerkUser) throw new Error("Unauthorized");
+
+            // 2. Silently ensure they exist in our Neon database
+            // onConflictDoNothing() is a Drizzle superpower. If they already exist, it just skips this step!
+            await ctx.db.insert(users).values({
+                id: clerkUser.id,
+                email: clerkUser.emailAddresses[0]?.emailAddress ?? "unknown@email.com",
+                name: clerkUser.fullName ?? "Unknown User",
+            }).onConflictDoNothing();
+
+            // --- THE ACTUAL COMMENT ---
+            // 3. Now that Neon officially knows who this user is, safely insert the comment
+            await ctx.db.insert(comments).values({
+                taskId: input.taskId,
+                content: input.content,
+                userId: ctx.userId,
+                workspaceId: ctx.workspaceId,
+            });
+
+            // THE LIVE WIRE: BROADCAST THE EVENT
+            // Channel: "task-123", Event: "new-comment"
+            await pusherServer.trigger(`task-${input.taskId}`, "new-comment", {
+                triggeredBy: ctx.userId, // We send the ID so the frontend knows who yelled
+            });
+
+            return { success: true };
         }),
 
     // THE UPDATE PROTOCOL (Rename Task)
@@ -81,6 +240,11 @@ export const taskRouter = createTRPCRouter({
     delete: protectedProcedure
         .input(z.object({ taskId: z.string() }))
         .mutation(async ({ ctx, input }) => {
+            // 1. Grab the user for the live broadcast
+            const clerkUser = await currentUser();
+            if (!clerkUser) throw new Error("Unauthorized");
+
+            // 2. Delete from the database
             await ctx.db.delete(tasks)
                 .where(
                     and(
@@ -88,6 +252,11 @@ export const taskRouter = createTRPCRouter({
                         eq(tasks.workspaceId, ctx.workspaceId) // Security Anchor
                     )
                 );
+
+            // 3. The Live Wire Broadcast
+            await pusherServer.trigger(`workspace-${ctx.workspaceId}`, "board-updated", {
+                triggeredBy: clerkUser.id,
+            });
 
             return { success: true };
         }),

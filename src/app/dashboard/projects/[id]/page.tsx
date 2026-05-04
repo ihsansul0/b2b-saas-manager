@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { DeleteProjectButton } from "~/components/shared/DeleteProjectButton";
 import { ProjectHeader } from "~/components/shared/ProjectHeader";
+import { ProjectAnalytics } from "~/components/shared/ProjectAnalytics";
 
 export default async function ProjectPage({
     params
@@ -32,6 +33,8 @@ export default async function ProjectPage({
                         <ProjectHeader projectId={project.id} initialName={project.name} />
                         <DeleteProjectButton projectId={project.id} />
                     </div>
+                    
+                    <ProjectAnalytics projectId={project.id} />
 
                     {/* We pass the verified ID into our Client Component */}
                     <TaskBoard projectId={project.id} />
