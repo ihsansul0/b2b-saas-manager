@@ -61,7 +61,7 @@ export async function POST(req: Request) {
                     email: primaryEmail,
                     name: fullName || "New User",
                 });
-                console.log(`✅ Webhook: Created user ${id}`);
+                console.log(`Webhook: Created user ${id}`);
             }
         }
 
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
                         name: fullName || "User",
                     })
                     .where(eq(users.id, id));
-                console.log(`✅ Webhook: Updated user ${id}`);
+                console.log(`Webhook: Updated user ${id}`);
             }
         }
 
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
                 id: id,
                 name: name,
             });
-            console.log(`✅ Webhook: Created workspace ${id}`);
+            console.log(`Webhook: Created workspace ${id}`);
         }
 
         // Always return a 200 to tell Clerk the message was received successfully
